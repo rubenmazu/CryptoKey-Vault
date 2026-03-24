@@ -7,8 +7,8 @@ from database.crud import (
     insert_key,
     insert_operation,
     insert_algorithm,
-    get_algorithms
-)
+    get_algorithms,
+    get_algorithm_by_id)
 
 from crypto.openssl_wrapper import encrypt_aes, decrypt_aes
 
@@ -16,19 +16,15 @@ from crypto.openssl_wrapper import encrypt_aes, decrypt_aes
 DB_PATH = "database.db"
 
 
-def reset_database():
-    # sterge baza de date daca exista
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
+def setup_default_algorithms():
+    algorithms = get_algorithms()
 
-    # recreeaza baza de date
-    initialize_db()
-
-    # insereaza algoritmii default
-    insert_algorithm("AES-128", "symmetric", 128, "OpenSSL")
-    insert_algorithm("AES-256", "symmetric", 256, "OpenSSL")
-
-    print("Baza de date a fost resetata si populata cu algoritmi default.")
+    if len(algorithms) == 0:
+        insert_algorithm("AES-128", "symmetric", 128, "OpenSSL")
+        insert_algorithm("AES-256", "symmetric", 256, "OpenSSL")
+        print("Algoritmii default au fost adaugati.")
+    else:
+        print("Algoritmii exista deja.")
 
 
 def select_file():
@@ -117,6 +113,8 @@ def select_algorithm():
 
 def run_encryption_flow():
     alg_id = select_algorithm()
+    algorithm = get_algorithm_by_id(alg_id)
+    key_size = algorithm[3]   
     key, key_id = select_or_generate_key(alg_id)
     file_path, file_id = select_file()
 
@@ -136,10 +134,10 @@ def run_encryption_flow():
     output = file_path + (".enc" if op == 1 else ".dec")
 
     if op == 1:
-        encrypt_aes(file_path, output, key)
+        encrypt_aes(file_path, output, key, key_size)
         op_type = "encrypt"
     else:
-        decrypt_aes(file_path, output, key)
+        decrypt_aes(file_path, output, key, key_size)
         op_type = "decrypt"
 
     insert_operation(
@@ -160,7 +158,8 @@ def run_encryption_flow():
 
 def main():
     print("Encryption Manager")
-    reset_database()   # resetare baza de date la fiecare rulare pentru testare
+    initialize_db()
+    setup_default_algorithms()
     run_encryption_flow()
 
 

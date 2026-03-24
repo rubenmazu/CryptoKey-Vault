@@ -1,16 +1,19 @@
 import subprocess
 
-def encrypt_aes(input_file, output_file, key):
+def encrypt_aes(input_file, output_file, key, key_size):
+    algo = f"-aes-{key_size}-cbc"
     subprocess.run([
-        "openssl", "enc", "-aes-256-cbc",
+        "openssl", "enc", algo,
         "-in", input_file,
         "-out", output_file,
         "-k", key
     ])
 
-def decrypt_aes(input_file, output_file, key):
+
+def decrypt_aes(input_file, output_file, key, key_size):
+    algo = f"-aes-{key_size}-cbc"
     subprocess.run([
-        "openssl", "enc", "-d", "-aes-256-cbc",
+        "openssl", "enc", "-d", algo,
         "-in", input_file,
         "-out", output_file,
         "-k", key
