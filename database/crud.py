@@ -8,12 +8,12 @@ def get_connection():
 
 # FILE CRUD
 
-def insert_file(name, path, size):
+def insert_file(name, path, size, status='original'):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO File (name, path, size) VALUES (?, ?, ?)",
-        (name, path, size)
+        "INSERT INTO File (name, path, size, status) VALUES (?, ?, ?, ?)",
+        (name, path, size, status)
     )
     conn.commit()
     conn.close()
@@ -175,5 +175,17 @@ def delete_operation(operation_id):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM Operation WHERE id = ?", (operation_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_file_status(file_id, status):
+    """Actualizează statusul fișierului (original/encrypted/decrypted)"""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE File SET status = ? WHERE id = ?",
+        (status, file_id)
+    )
     conn.commit()
     conn.close()

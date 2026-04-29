@@ -35,7 +35,8 @@ def initialize_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         path TEXT NOT NULL,
-        size INTEGER NOT NULL
+        size INTEGER NOT NULL,
+        status TEXT DEFAULT 'original'
     )
     """)
 
