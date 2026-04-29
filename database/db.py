@@ -14,7 +14,8 @@ def initialize_db():
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         key_size INTEGER,
-        framework TEXT NOT NULL
+        framework TEXT NOT NULL,
+        is_asymmetric INTEGER DEFAULT 0
     )
     """)
 

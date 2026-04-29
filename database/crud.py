@@ -49,13 +49,13 @@ def delete_file(file_id):
 
 # ALGORITHM CRUD
 
-def insert_algorithm(name, type, key_size, framework):
+def insert_algorithm(name, type, key_size, framework, is_asymmetric=0):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO Algorithm (name, type, key_size, framework)
-        VALUES (?, ?, ?, ?)
-    """, (name, type, key_size, framework))
+        INSERT INTO Algorithm (name, type, key_size, framework, is_asymmetric)
+        VALUES (?, ?, ?, ?, ?)
+    """, (name, type, key_size, framework, is_asymmetric))
     conn.commit()
     conn.close()
 

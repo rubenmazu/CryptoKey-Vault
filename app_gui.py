@@ -5,7 +5,7 @@ import os
 
 from database.db import initialize_db
 from database.crud import *
-from crypto.openssl_wrapper import encrypt_aes, decrypt_aes
+from crypto.openssl_wrapper import encrypt_aes, decrypt_aes, generate_rsa_keys, encrypt_rsa_public, decrypt_rsa_private
 from crypto.pycryptodome_wrapper import encrypt_aes_pycryptodome, decrypt_aes_pycryptodome
 from utils.hashing import calculate_file_hash
 from utils.performance import measure_performance
@@ -25,9 +25,11 @@ class CryptoApp:
     def setup_default_algorithms(self):
         algorithms = get_algorithms()
         if len(algorithms) == 0:
-            insert_algorithm("AES-128", "symmetric", 128, "OpenSSL")
-            insert_algorithm("AES-256", "symmetric", 256, "OpenSSL")
-            insert_algorithm("AES-256", "symmetric", 256, "PyCryptodome")
+            insert_algorithm("AES-128", "symmetric", 128, "OpenSSL", 0)
+            insert_algorithm("AES-256", "symmetric", 256, "OpenSSL", 0)
+            insert_algorithm("AES-256", "symmetric", 256, "PyCryptodome", 0)
+            insert_algorithm("RSA-2048", "asymmetric", 2048, "OpenSSL", 1)
+            insert_algorithm("RSA-4096", "asymmetric", 4096, "OpenSSL", 1)
     
     def create_widgets(self):
         # Frame pentru selectare fișier
@@ -55,13 +57,18 @@ class CryptoApp:
         key_frame = ttk.LabelFrame(self.root, text="Cheie", padding=10)
         key_frame.pack(fill="x", padx=10, pady=5)
         
-        ttk.Label(key_frame, text="Introdu cheia:").pack()
+        ttk.Label(key_frame, text="Introdu cheia (sau generează RSA):").pack()
         self.key_entry = ttk.Entry(key_frame, width=50, show="*")
         self.key_entry.pack(pady=5)
         
+        key_buttons = ttk.Frame(key_frame)
+        key_buttons.pack()
+        
         self.show_key_var = tk.BooleanVar()
-        ttk.Checkbutton(key_frame, text="Arată cheia", variable=self.show_key_var, 
-                       command=self.toggle_key_visibility).pack()
+        ttk.Checkbutton(key_buttons, text="Arată cheia", variable=self.show_key_var, 
+                       command=self.toggle_key_visibility).pack(side="left", padx=5)
+        
+        ttk.Button(key_buttons, text="Generează Chei RSA", command=self.generate_rsa).pack(side="left", padx=5)
         
         # Frame pentru operații
         op_frame = ttk.LabelFrame(self.root, text="Operație", padding=10)
@@ -86,6 +93,33 @@ class CryptoApp:
             self.key_entry.config(show="")
         else:
             self.key_entry.config(show="*")
+    
+    def generate_rsa(self):
+        """Generează pereche de chei RSA"""
+        algo_id = int(self.algo_var.get().split(":")[0])
+        algorithm = get_algorithm_by_id(algo_id)
+        
+        if algorithm[5] != 1:  # nu e asymmetric
+            messagebox.showwarning("Atenție", "Selectează un algoritm RSA pentru a genera chei!")
+            return
+        
+        self.log("Generez chei RSA...")
+        key_size = algorithm[3]
+        
+        try:
+            private_key, public_key = generate_rsa_keys(key_size)
+            self.log(f"✓ Chei generate:")
+            self.log(f"  - Cheie privată: {private_key}")
+            self.log(f"  - Cheie publică: {public_key}")
+            
+            # Salvează calea cheii private în entry
+            self.key_entry.delete(0, "end")
+            self.key_entry.insert(0, private_key)
+            
+            messagebox.showinfo("Succes", f"Chei RSA generate!\n\nPrivată: {private_key}\nPublică: {public_key}")
+        except Exception as e:
+            self.log(f"✗ Eroare: {str(e)}")
+            messagebox.showerror("Eroare", f"Nu s-au putut genera cheile: {str(e)}")
     
     def select_file(self):
         file_path = filedialog.askopenfilename()
@@ -114,6 +148,7 @@ class CryptoApp:
         # Obține algoritmul
         algo_id = int(self.algo_var.get().split(":")[0])
         algorithm = get_algorithm_by_id(algo_id)
+        is_rsa = algorithm[5] == 1
         
         # Calculează hash înainte
         hash_before = calculate_file_hash(self.selected_file)
@@ -142,26 +177,41 @@ class CryptoApp:
         
         # Criptează cu măsurare performanță
         framework = algorithm[4]
-        if framework == "OpenSSL":
-            perf = measure_performance(encrypt_aes, self.selected_file, output, key, algorithm[3])
-        else:
-            perf = measure_performance(encrypt_aes_pycryptodome, self.selected_file, output, key)
         
-        self.log(f"Framework: {framework}")
-        self.log(f"Timp: {perf['time']} secunde")
-        self.log(f"Memorie: {perf['memory']} MB")
-        
-        # Calculează hash după
-        hash_after = calculate_file_hash(output)
-        self.log(f"Hash criptat: {hash_after[:16]}...")
-        
-        # Salvează operația
-        insert_operation(file_id, key_id, algo_id, "encrypt", framework, 
-                        perf['time'], perf['memory'], hash_after, 
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-        
-        self.log(f"\n✓ Fișier criptat: {output}")
-        messagebox.showinfo("Succes", "Fișier criptat cu succes!")
+        try:
+            if is_rsa:
+                # Pentru RSA, key e calea către cheia privată
+                # Trebuie să existe și cheia publică
+                public_key = key.replace("private", "public")
+                if not os.path.exists(public_key):
+                    raise Exception(f"Cheia publică nu există: {public_key}")
+                
+                self.log(f"Folosesc cheie publică: {public_key}")
+                perf = measure_performance(encrypt_rsa_public, self.selected_file, output, public_key)
+            elif framework == "OpenSSL":
+                perf = measure_performance(encrypt_aes, self.selected_file, output, key, algorithm[3])
+            else:
+                perf = measure_performance(encrypt_aes_pycryptodome, self.selected_file, output, key)
+            
+            self.log(f"Framework: {framework}")
+            self.log(f"Algoritm: {algorithm[1]}")
+            self.log(f"Timp: {perf['time']} secunde")
+            self.log(f"Memorie: {perf['memory']} MB")
+            
+            # Calculează hash după
+            hash_after = calculate_file_hash(output)
+            self.log(f"Hash criptat: {hash_after[:16]}...")
+            
+            # Salvează operația
+            insert_operation(file_id, key_id, algo_id, "encrypt", framework, 
+                            perf['time'], perf['memory'], hash_after, 
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+            
+            self.log(f"\n✓ Fișier criptat: {output}")
+            messagebox.showinfo("Succes", "Fișier criptat cu succes!")
+        except Exception as e:
+            self.log(f"\n✗ Eroare: {str(e)}")
+            messagebox.showerror("Eroare", f"Criptare eșuată: {str(e)}")
     
     def decrypt_file(self):
         if not hasattr(self, 'selected_file'):
@@ -178,24 +228,38 @@ class CryptoApp:
         
         algo_id = int(self.algo_var.get().split(":")[0])
         algorithm = get_algorithm_by_id(algo_id)
+        is_rsa = algorithm[5] == 1
         
         output = self.selected_file.replace(".enc", ".dec")
         
         framework = algorithm[4]
-        if framework == "OpenSSL":
-            perf = measure_performance(decrypt_aes, self.selected_file, output, key, algorithm[3])
-        else:
-            perf = measure_performance(decrypt_aes_pycryptodome, self.selected_file, output, key)
         
-        self.log(f"Framework: {framework}")
-        self.log(f"Timp: {perf['time']} secunde")
-        self.log(f"Memorie: {perf['memory']} MB")
-        
-        hash_decrypted = calculate_file_hash(output)
-        self.log(f"Hash decriptat: {hash_decrypted[:16]}...")
-        
-        self.log(f"\n✓ Fișier decriptat: {output}")
-        messagebox.showinfo("Succes", "Fișier decriptat cu succes!")
+        try:
+            if is_rsa:
+                # Pentru RSA, key e calea către cheia privată
+                if not os.path.exists(key):
+                    raise Exception(f"Cheia privată nu există: {key}")
+                
+                self.log(f"Folosesc cheie privată: {key}")
+                perf = measure_performance(decrypt_rsa_private, self.selected_file, output, key)
+            elif framework == "OpenSSL":
+                perf = measure_performance(decrypt_aes, self.selected_file, output, key, algorithm[3])
+            else:
+                perf = measure_performance(decrypt_aes_pycryptodome, self.selected_file, output, key)
+            
+            self.log(f"Framework: {framework}")
+            self.log(f"Algoritm: {algorithm[1]}")
+            self.log(f"Timp: {perf['time']} secunde")
+            self.log(f"Memorie: {perf['memory']} MB")
+            
+            hash_decrypted = calculate_file_hash(output)
+            self.log(f"Hash decriptat: {hash_decrypted[:16]}...")
+            
+            self.log(f"\n✓ Fișier decriptat: {output}")
+            messagebox.showinfo("Succes", "Fișier decriptat cu succes!")
+        except Exception as e:
+            self.log(f"\n✗ Eroare: {str(e)}")
+            messagebox.showerror("Eroare", f"Decriptare eșuată: {str(e)}")
 
 
 if __name__ == "__main__":
